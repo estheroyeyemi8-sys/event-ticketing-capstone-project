@@ -21,4 +21,9 @@ This log records AI assistance used while implementing the Build 1 domain core.
 - Ticket prices remain represented in whole cents.
 
 ## Verification
-Record the actual test and demo results here after running them locally. Do not mark checks as passed until they have been run.
+- `npm.cmd test`: 22 tests passed, 0 failed.
+- `npm.cmd run demo`: executed successfully and demonstrated the expected booking and waitlist flow.
+- `npm.cmd run benchmark`: executed successfully and compared `Array.find()` with `Map.get()`.
+
+## Notes
+Benchmark timings depend on the machine and runtime environment. Big O complexity provides the more general comparison of how lookup performance scales.
