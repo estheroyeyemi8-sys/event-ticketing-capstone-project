@@ -62,7 +62,12 @@ export function createEvent(
 
   const date = new Date(startsAt);
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+  Number.isNaN(date.getTime()) ||
+  (typeof startsAt === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(startsAt) &&
+    date.toISOString().slice(0, 10) !== startsAt)
+) {
     throw new DomainError('VALIDATION', 'startsAt must be a valid date');
   }
 
@@ -140,6 +145,7 @@ export function seatsLeft(store, tierId) {
 }
 
 // Books tickets for a customer.
+// Books tickets for a customer.
 export function bookTickets(store, { tierId, customerName, quantity }) {
   const tier = store.tiers.get(tierId);
 
@@ -150,7 +156,15 @@ export function bookTickets(store, { tierId, customerName, quantity }) {
   validateCustomerName(customerName);
   validateQuantity(quantity);
 
-  // Check capacity before modifying anything.
+  const event = store.events.get(tier.eventId);
+
+  if (event.status !== 'published') {
+    throw new DomainError(
+      'INVALID_STATE',
+      'Cannot book tickets for an unpublished event',
+    );
+  }
+
   if (seatsLeft(store, tierId) < quantity) {
     throw new DomainError('SOLD_OUT', 'Not enough tickets available');
   }
@@ -162,17 +176,15 @@ export function bookTickets(store, { tierId, customerName, quantity }) {
     customerName: customerName.trim(),
     quantity,
     amountCents: tier.priceCents * quantity,
-    status: 'confirmed',
+    status: 'pending',
   };
 
   tier.sold += quantity;
-
   store.bookings.set(booking.id, booking);
   store.bookingsByReference.set(booking.reference, booking.id);
 
   return booking;
 }
-
 // Cancels a booking and releases its tickets.
 export function cancelBooking(store, bookingIdentifier) {
   // Accept either the internal booking ID or customer reference.
@@ -188,7 +200,7 @@ export function cancelBooking(store, bookingIdentifier) {
     throw new DomainError('NOT_FOUND', 'Booking not found');
   }
 
-  if (booking.status !== 'confirmed') {
+  if (!['confirmed', 'pending'].includes(booking.status)) {
     throw new DomainError(
       'ALREADY_CANCELLED',
       'Booking is not in a cancellable state',
@@ -267,4 +279,63 @@ export function findBookingByReference(store, reference) {
   }
 
   return store.bookings.get(bookingId);
+}
+
+
+// Publishes an event that has at least one ticket tier.
+export function publishEvent(store, eventId) {
+  const event = store.events.get(eventId);
+
+  if (!event) {
+    throw new DomainError('NOT_FOUND', 'Event not found');
+  }
+
+  if (event.tierIds.length === 0) {
+    throw new DomainError(
+      'INVALID_STATE',
+      'An event must have at least one ticket tier before publishing',
+    );
+  }
+
+  event.status = 'published';
+
+  return event;
+}
+
+// Creates summaries for searching and displaying events.
+export function listEventSummaries(
+  store,
+  { publishedOnly = true } = {},
+) {
+  const summaries = [];
+
+  for (const event of store.events.values()) {
+    if (publishedOnly && event.status !== 'published') {
+      continue;
+    }
+
+    const tiers = event.tierIds.map((tierId) =>
+      store.tiers.get(tierId),
+    );
+
+    const prices = tiers.map((tier) => tier.priceCents);
+    const totalSeatsLeft = tiers.reduce(
+      (total, tier) => total + tier.capacity - tier.sold,
+      0,
+    );
+
+    summaries.push({
+      id: event.id,
+      title: event.title,
+      city: event.city,
+      venue: event.venue,
+      startsAt: event.startsAt,
+      cheapestPriceCents: prices.length > 0
+        ? Math.min(...prices)
+        : null,
+      seatsLeft: totalSeatsLeft,
+    });
+  }
+
+  return summaries;
 }
